@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Create Prompt</h1>
+<form method="POST" action="{{ url_for('main.create_prompt') }}">
+  {{ form.csrf_token }}
+  <div class="form-group">
+    <label>Title</label>
+    {{ form.title(class="form-control") }}
+  </div>
+  <div id="blocks-container">
+    {% for block_form in form.blocks %}
+      {{ block_form(class="prompt-block") }}
+    {% endfor %}
+  </div>
+  <button type="button" class="btn btn-secondary" id="add-block-btn">Add Block</button>
+  {{ form.submit(class="btn btn-primary") }}
+</form>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+  // Add your JavaScript code for dynamic addition of blocks here.
+</script>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Prompts</h1>
+<a href="{{ url_for('main.create_prompt') }}" class="btn btn-primary mb-3">Create New Prompt</a>
+<ul class="list-group">
+  {% for prompt in prompts %}
+    <li class="list-group-item">
+      <a href="{{ url_for('main.view_prompt', prompt_id=prompt.id) }}">{{ prompt.title }}</a>
+    </li>
+  {% endfor %}
+</ul>
+{% endblock %}

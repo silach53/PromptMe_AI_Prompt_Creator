@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ prompt.title }}</h1>
+<div id="blocks-container">
+  {% for block in prompt.blocks %}
+    <div class="prompt-block">
+      <h5>{{ block.block_type }}</h5>
+      <p>{{ block.content }}</p>
+    </div>
+  {% endfor %}
+</div>
+<button type="button" class="btn btn-primary" id="generate-response-btn">Generate AI Response</button>
+<div id="ai-response-container">
+  <h3>AI Response</h3>
+  <p>{{ prompt.ai_response }}</p>
+</div>
+<a href="{{ url_for('main.edit_prompt', prompt_id=prompt.id) }}" class="btn btn-secondary">Edit Prompt</a>
+<button type="button" class="btn btn-success" id="copy-result-btn">Copy Result</button>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+  // Add your JavaScript code for handling AI response generation and copying the result here.
+</script>
+{% endblock %}
