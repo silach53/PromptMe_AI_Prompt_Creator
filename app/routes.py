@@ -3,6 +3,7 @@ from app import db
 from app.models import Prompt, Block
 from app.forms import CreatePromptForm, EditPromptForm
 import requests
+import json
 
 main = Blueprint("main", __name__)
 
@@ -20,7 +21,9 @@ def create_prompt():
         db.session.commit()
 
         for block in form.blocks.data:
-            block_instance = Block(prompt_id=prompt.id, block_type=block["type"], content=block["content"], order=block["order"])
+            with open('block.txt','w') as f:
+                f.write(json.dumps(block))
+            block_instance = Block(prompt_id=prompt.id, block_type=block["block_type"], content=block["content"], order=block["order"])
             db.session.add(block_instance)
         db.session.commit()
 
@@ -41,18 +44,18 @@ def edit_prompt(prompt_id):
         for block_data in form.blocks.data:
             block = Block.query.get(block_data["id"])
             if block:
-                block.block_type = block_data["type"]
+                block.block_type = block_data["block_type"]
                 block.content = block_data["content"]
                 block.order = block_data["order"]
             else:
-                new_block = Block(prompt_id=prompt.id, block_type=block_data["type"], content=block_data["content"], order=block_data["order"])
+                new_block = Block(prompt_id=prompt.id, block_type=block_data["block_type"], content=block_data["content"], order=block_data["order"])
                 db.session.add(new_block)
         db.session.commit()
 
         flash("Prompt updated successfully.", "success")
         return redirect(url_for("main.view_prompt", prompt_id=prompt_id))
 
-    form.blocks.data = [{"id": block.id, "type": block.block_type, "content": block.content, "order": block.order} for block in prompt.blocks]
+    form.blocks.entries = [{"id": block.id, "block_type": block.block_type, "content": block.content, "order": block.order} for block in prompt.blocks]
 
     return render_template("edit_prompt.html", form=form, prompt_id=prompt_id)
 

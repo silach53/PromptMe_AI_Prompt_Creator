@@ -1,0 +1,424 @@
+run.py
+
+from app import create_app
+from config import Config
+
+app = create_app(Config)
+
+if __name__ == "__main__":
+    app.run()
+
+
+config.py
+
+class Config:
+    SECRET_KEY = 'my-secret-key'
+    #SQLALCHEMY_DATABASE_URI = 'sqlite:///mydatabase.db'
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    USERNAME = "workalexandr"  # замените на свой логин
+    connection_string = f"postgresql+psycopg2://{USERNAME}:@localhost:5433/{USERNAME}"
+    SQLALCHEMY_DATABASE_URI = connection_string
+    #engine = create_engine(connection_string)
+    #Session = sessionmaker(engine)
+    # Replace with your database connection details
+    #Base.metadata.create_all(engine)
+
+app/models.py
+
+if __name__ == '__main__':
+    from __init__ import db
+else:
+    from app import db
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(64), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    prompts = db.relationship("Prompt", backref="user", lazy=True)
+
+class Prompt(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(128), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    blocks = db.relationship("Block", backref="prompt", lazy=True, order_by="Block.order")
+    ai_response = db.Column(db.Text, nullable=True)
+
+class Block(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    prompt_id = db.Column(db.Integer, db.ForeignKey("prompt.id"), nullable=False)
+    block_type = db.Column(db.String(64), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    order = db.Column(db.Integer, nullable=False)
+
+
+
+'''Короче странно, если хочу запустить этой файл, то выдаст ошибку потому что модуля app не существует
+Если поменять на __init__ то бд создасться и после этого уже из run.py import app здесь работает'''
+def main():
+    USERNAME = "workalexandr"  # замените на свой логин
+    connection_string = f"postgresql+psycopg2://{USERNAME}:@localhost:5433/{USERNAME}"
+    engine = create_engine(connection_string)
+    db.metadata.create_all(engine)
+
+if __name__ == '__main__':
+    main()
+
+app/__init__.py
+
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
+
+db = SQLAlchemy()
+
+def create_app(config_class):
+    app = Flask(__name__)
+    app.config.from_object(config_class)
+
+    db.init_app(app)
+
+    from app.routes import main
+    app.register_blueprint(main)
+
+    return app
+
+app/forms.py
+
+from flask_wtf import FlaskForm
+from wtforms import StringField, SelectField, TextAreaField, SubmitField, FormField, FieldList
+from wtforms.validators import DataRequired, Optional
+
+class BlockForm(FlaskForm):
+    block_id = StringField("ID", validators=[Optional()])
+    block_type = SelectField("Block Type", choices=[("instruction", "Model Instruction"), ("task", "Task Text"), ("comment", "Additional Comments"), ("code", "Code")], validators=[DataRequired()])
+    content = TextAreaField("Content", validators=[DataRequired()])
+    order = StringField("Order", validators=[DataRequired()])
+
+class CreatePromptForm(FlaskForm):
+    title = StringField("Title", validators=[DataRequired()])
+    blocks = FieldList(FormField(BlockForm), min_entries=1)
+    submit = SubmitField("Create Prompt")
+
+class EditPromptForm(FlaskForm):
+    title = StringField("Title", validators=[DataRequired()])
+    blocks = FieldList(FormField(BlockForm), min_entries=1)
+    submit = SubmitField("Update Prompt")
+
+
+app/routes.py
+
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from app import db
+from app.models import Prompt, Block
+from app.forms import CreatePromptForm, EditPromptForm
+import requests
+import json
+
+main = Blueprint("main", __name__)
+
+@main.route("/")
+def index():
+    prompts = Prompt.query.all()
+    return render_template("index.html", prompts=prompts)
+
+@main.route("/create_prompt", methods=["GET", "POST"])
+def create_prompt():
+    form = CreatePromptForm()
+    if form.validate_on_submit():
+        prompt = Prompt(title=form.title.data)
+        db.session.add(prompt)
+        db.session.commit()
+
+        for block in form.blocks.data:
+            with open('block.txt','w') as f:
+                f.write(json.dumps(block))
+            block_instance = Block(prompt_id=prompt.id, block_type=block["block_type"], content=block["content"], order=block["order"])
+            db.session.add(block_instance)
+        db.session.commit()
+
+        flash("Prompt created successfully.", "success")
+        return redirect(url_for("main.index"))
+
+    return render_template("create_prompt.html", form=form)
+
+@main.route("/edit_prompt/<int:prompt_id>", methods=["GET", "POST"])
+def edit_prompt(prompt_id):
+    prompt = Prompt.query.get_or_404(prompt_id)
+    form = EditPromptForm(obj=prompt)
+
+    if form.validate_on_submit():
+        prompt.title = form.title.data
+        db.session.commit()
+
+        for block_data in form.blocks.data:
+            block = Block.query.get(block_data["id"])
+            if block:
+                block.block_type = block_data["block_type"]
+                block.content = block_data["content"]
+                block.order = block_data["order"]
+            else:
+                new_block = Block(prompt_id=prompt.id, block_type=block_data["block_type"], content=block_data["content"], order=block_data["order"])
+                db.session.add(new_block)
+        db.session.commit()
+
+        flash("Prompt updated successfully.", "success")
+        return redirect(url_for("main.view_prompt", prompt_id=prompt_id))
+
+    form.blocks.entries = [{"id": block.id, "block_type": block.block_type, "content": block.content, "order": block.order} for block in prompt.blocks]
+
+    return render_template("edit_prompt.html", form=form, prompt_id=prompt_id)
+
+@main.route("/view_prompt/<int:prompt_id>")
+def view_prompt(prompt_id):
+    prompt = Prompt.query.get_or_404(prompt_id)
+    return render_template("view_prompt.html", prompt=prompt)
+
+@main.route("/generate_ai_response/<int:prompt_id>", methods=["POST"])
+def generate_ai_response(prompt_id):
+    prompt = Prompt.query.get_or_404(prompt_id)
+    prompt_text = "\n".join([block.content for block in prompt.blocks])
+
+    # Replace with the actual API call to ChatGPT
+    response = requests.post("https://api.openai.com/v1/engines/davinci-codex/completions", json={"prompt": prompt_text})
+
+    if response.status_code == 200:
+        generated_text = response.json()["choices"][0]["text"]
+        prompt.ai_response = generated_text
+        db.session.commit()
+        return jsonify({"response": generated_text})
+    else:
+        return jsonify({"error": "Failed to generate AI response."}), 500
+
+@main.route("/copy_result/<int:prompt_id>", methods=["GET"])
+def copy_result(prompt_id):
+    prompt = Prompt.query.get_or_404(prompt_id)
+    return jsonify({"result": prompt.ai_response})
+
+
+app/templates/index.html
+
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Prompts</h1>
+<a href="{{ url_for('main.create_prompt') }}" class="btn btn-primary mb-3">Create New Prompt</a>
+<ul class="list-group">
+  {% for prompt in prompts %}
+    <li class="list-group-item">
+      <a href="{{ url_for('main.view_prompt', prompt_id=prompt.id) }}">{{ prompt.title }}</a>
+    </li>
+  {% endfor %}
+</ul>
+{% endblock %}
+
+
+app/templates/base.html
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link href="{{ url_for('static', filename='css/main.css') }}" rel="stylesheet">
+    <title>PromptMe</title>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+      <div class="container">
+        <a class="navbar-brand" href="{{ url_for('main.index') }}">PromptMe</a>
+      </div>
+    </nav>
+
+    <div class="container mt-4">
+      {% for message in get_flashed_messages(with_categories=True) %}
+        <div class="alert alert-{{ message[0] }}">{{ message[1] }}</div>
+      {% endfor %}
+      {% block content %}{% endblock %}
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.3/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>
+
+
+app/templates/edit_prompt.html
+
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Edit Prompt</h1>
+<form method="POST" action="{{ url_for('main.edit_prompt', prompt_id=prompt_id) }}">
+  {{ form.csrf_token }}
+  <div class="form-group">
+    <label>Title</label>
+    {{ form.title(class="form-control") }}
+  </div>
+  <div id="blocks-container">
+    {% for block_form in form.blocks %}
+      {{ block_form(class="prompt-block") }}
+    {% endfor %}
+  </div>
+  <button type="button" class="btn btn-secondary" id="add-block-btn">Add Block</button>
+  {{ form.submit(class="btn btn-primary") }}
+</form>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+  // Add your JavaScript code for dynamic addition, removal, and rearrangement of blocks here.
+</script>
+{% endblock %}
+
+
+app/templates/view_prompt.html
+
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ prompt.title }}</h1>
+<div id="blocks-container">
+  {% for block in prompt.blocks %}
+    <div class="prompt-block">
+      <h5>{{ block.block_type }}</h5>
+      <p>{{ block.content }}</p>
+    </div>
+  {% endfor %}
+</div>
+<button type="button" class="btn btn-primary" id="generate-response-btn">Generate AI Response</button>
+<div id="ai-response-container">
+  <h3>AI Response</h3>
+  <p>{{ prompt.ai_response }}</p>
+</div>
+<a href="{{ url_for('main.edit_prompt', prompt_id=prompt.id) }}" class="btn btn-secondary">Edit Prompt</a>
+<button type="button" class="btn btn-success" id="copy-result-btn">Copy Result</button>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+  // Add your JavaScript code for handling AI response generation and copying the result here.
+</script>
+{% endblock %}
+
+
+app/templates/create_prompt.html
+
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Create Prompt</h1>
+<form method="POST" action="{{ url_for('main.create_prompt') }}">
+  {{ form.csrf_token }}
+  <div class="form-group">
+    <label>Title</label>
+    {{ form.title(class="form-control") }}
+  </div>
+  <div id="blocks-container">
+    {% for block_form in form.blocks %}
+      {{ block_form(class="prompt-block") }}
+    {% endfor %}
+  </div>
+  <button type="button" class="btn btn-secondary" id="add-block-btn">Add Block</button>
+  {{ form.submit(class="btn btn-primary") }}
+</form>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    // Add your JavaScript code for dynamic addition of blocks here.
+  const blockContainer = document.querySelector('#block-container');
+  const addButton = document.querySelector('#add-block');
+  let blockCount = 1;
+
+  addButton.addEventListener('click', function() {
+    const newBlock = document.createElement('div');
+    newBlock.classList.add('block');
+    newBlock.innerHTML = `
+      <h3>Block ${++blockCount}</h3>
+      <p>This is the content of block ${blockCount}.</p>
+    `;
+    blockContainer.appendChild(newBlock);
+  });
+</script>
+{% endblock %}
+
+
+static/css/main.css
+
+body {
+    font-family: 'Roboto', sans-serif;
+  }
+  
+  .prompt-block {
+    background-color: #f7f8fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 5px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  
+  #ai-response-container {
+    background-color: #f7f8fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 5px;
+    padding: 1rem;
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+  }
+  
+
+static/js/main.js
+
+function addBlock() {
+    // Add a new block to the prompt form.
+    // You might need to adjust this to match your form structure and server-side logic.
+    const blocksContainer = document.getElementById("blocks-container");
+    const block = document.createElement("div");
+    block.classList.add("prompt-block");
+    block.innerHTML = `
+      <label>Block Type</label>
+      <select class="form-control">
+        <option value="instruction">Instruction</option>
+        <option value="task_text">Task Text</option>
+        <option value="additional_comments">Additional Comments</option>
+        <option value="code">Code</option>
+      </select>
+      <label>Content</label>
+      <textarea class="form-control"></textarea>
+      <button type="button" class="btn btn-danger" onclick="removeBlock(this)">Remove Block</button>
+    `;
+    blocksContainer.appendChild(block);
+  }
+  
+  function removeBlock(blockElement) {
+    // Remove a block from the prompt form.
+    blockElement.parentElement.remove();
+  }
+  
+  function updateBlockOrder() {
+    // Update the order of the blocks in the prompt form based on user input.
+    // This function will depend on the specific implementation of your form and how you manage block order.
+  }
+  
+  function copyToClipboard(text) {
+    // Copy the given text to the clipboard.
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textArea);
+  }
+  
+  // Add event listeners for adding blocks and other interactions if necessary.
+  document.getElementById("add-block-btn").addEventListener("click", addBlock);
+  

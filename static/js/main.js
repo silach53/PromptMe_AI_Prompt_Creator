@@ -24,9 +24,29 @@ function addBlock() {
     blockElement.parentElement.remove();
   }
   
+  //not tested
   function updateBlockOrder() {
     // Update the order of the blocks in the prompt form based on user input.
     // This function will depend on the specific implementation of your form and how you manage block order.
+  
+      // Get the prompt form and its blocks
+      const form = document.querySelector("#prompt-form");
+      const blocks = Array.from(form.querySelectorAll(".block"));
+    
+      // Sort the blocks based on user input
+      blocks.sort((a, b) => {
+        const aIndex = parseInt(a.querySelector(".block-index").textContent);
+        const bIndex = parseInt(b.querySelector(".block-index").textContent);
+        return aIndex - bIndex;
+      });
+    
+      // Reorder the blocks in the prompt form
+      blocks.forEach((block, index) => {
+        block.querySelector(".block-index").textContent = index + 1;
+        form.appendChild(block);
+      });
+    
+  
   }
   
   function copyToClipboard(text) {
@@ -41,4 +61,5 @@ function addBlock() {
   
   // Add event listeners for adding blocks and other interactions if necessary.
   document.getElementById("add-block-btn").addEventListener("click", addBlock);
+
   

@@ -21,6 +21,19 @@
 {% block scripts %}
 {{ super() }}
 <script>
-  // Add your JavaScript code for dynamic addition of blocks here.
+    // Add your JavaScript code for dynamic addition of blocks here.
+  const blockContainer = document.querySelector('#block-container');
+  const addButton = document.querySelector('#add-block');
+  let blockCount = 1;
+
+  addButton.addEventListener('click', function() {
+    const newBlock = document.createElement('div');
+    newBlock.classList.add('block');
+    newBlock.innerHTML = `
+      <h3>Block ${++blockCount}</h3>
+      <p>This is the content of block ${blockCount}.</p>
+    `;
+    blockContainer.appendChild(newBlock);
+  });
 </script>
 {% endblock %}
